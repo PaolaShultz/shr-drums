@@ -141,7 +141,10 @@ pub struct KitProcessing {
     pub transient: f32,
     pub body: f32,
     pub parallel_compression: f32,
+    /// Format-1 compatibility field. Ambience is host-owned; this value is
+    /// validated and preserved but is not rendered by the in-process engine.
     pub room_amount: f32,
+    /// Format-1 compatibility field paired with `room_amount`.
     pub room_decay: f32,
     pub output_gain_db: f32,
     pub ceiling_dbfs: f32,

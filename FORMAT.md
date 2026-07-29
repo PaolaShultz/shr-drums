@@ -12,6 +12,11 @@ round-robin assignments, choke groups, envelopes, gain and pan, reviewed base
 pitch, bounded tuning and FOLLOW KEY rules, modeled/hybrid parameters, bus
 processing defaults, WAV metadata, and per-asset integrity hashes.
 
+`room_amount` and `room_decay` remain required compatibility fields in format
+1, but the in-process engine no longer renders them. New factory packages set
+them to zero. SHR-DAW owns ambience and delay as separate, Project-persisted
+effects so an audible repeating delay is never presented as room sound.
+
 Trigger notes always remain GM percussion notes. OFF uses authored tuning.
 FOLLOW KEY uses each voice's authored rule and the host Project tonic/mode.
 MANUAL applies a per-piece pitch-class target and cents offset. Broadband

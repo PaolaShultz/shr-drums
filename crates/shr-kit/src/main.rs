@@ -717,37 +717,37 @@ fn processing(family: Family) -> KitProcessing {
         Family::BigRock => KitProcessing {
             high_pass_hz: 18.0,
             low_pass_hz: 19_000.0,
-            saturation: 0.24,
-            transient: 0.35,
-            body: 0.28,
-            parallel_compression: 0.38,
-            room_amount: 0.24,
-            room_decay: 0.48,
-            output_gain_db: -7.0,
+            saturation: 0.12,
+            transient: 0.22,
+            body: 0.18,
+            parallel_compression: 0.18,
+            room_amount: 0.0,
+            room_decay: 0.2,
+            output_gain_db: -5.0,
             ceiling_dbfs: -1.5,
         },
         Family::ExperimentalNoise => KitProcessing {
             high_pass_hz: 22.0,
-            low_pass_hz: 16_000.0,
-            saturation: 0.52,
-            transient: 0.5,
-            body: 0.2,
-            parallel_compression: 0.62,
-            room_amount: 0.36,
-            room_decay: 0.62,
-            output_gain_db: -9.0,
+            low_pass_hz: 14_000.0,
+            saturation: 0.32,
+            transient: 0.25,
+            body: 0.1,
+            parallel_compression: 0.28,
+            room_amount: 0.0,
+            room_decay: 0.2,
+            output_gain_db: -7.0,
             ceiling_dbfs: -1.5,
         },
         Family::ElectronicHouse => KitProcessing {
             high_pass_hz: 15.0,
             low_pass_hz: 18_000.0,
-            saturation: 0.2,
-            transient: 0.4,
-            body: 0.3,
-            parallel_compression: 0.3,
-            room_amount: 0.12,
-            room_decay: 0.28,
-            output_gain_db: -8.0,
+            saturation: 0.14,
+            transient: 0.28,
+            body: 0.22,
+            parallel_compression: 0.15,
+            room_amount: 0.0,
+            room_decay: 0.2,
+            output_gain_db: -6.0,
             ceiling_dbfs: -1.5,
         },
     }
@@ -865,7 +865,9 @@ mod tests {
         assert_ne!(noise, house);
         for settings in [rock, noise, house] {
             assert!(settings.ceiling_dbfs <= -1.0);
-            assert!(settings.room_amount <= 1.0);
+            assert_eq!(settings.room_amount, 0.0);
+            assert!(settings.saturation <= 0.32);
+            assert!(settings.parallel_compression <= 0.28);
         }
     }
 

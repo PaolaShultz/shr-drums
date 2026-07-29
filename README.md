@@ -16,7 +16,9 @@ cargo run -p shr-kit -- factory user/dist
 
 The factory command produces three local review packages. The two acoustic
 recipes are deliberately replaceable foundations: importing cleared acoustic
-samples keeps their attack and room while modeled body resonators provide
-precise tuning.
+samples keeps their attack while modeled body resonators provide precise
+tuning. Ambience and tempo delay are separate Project effects in SHR-DAW; the
+library bus provides only bounded filtering, transient/body shaping, restrained
+parallel compression, saturation, gain, and output protection.
 
 See [the package contract](FORMAT.md) and [sample provenance](SOURCES.md).

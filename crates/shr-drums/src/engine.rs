@@ -64,9 +64,7 @@ pub struct DrumEngine {
     detector: f32,
     slow_detector: f32,
     compressor: f32,
-    room_left: Box<[f32]>,
-    room_right: Box<[f32]>,
-    room_index: usize,
+    hard_reset_requested: bool,
 }
 
 impl DrumEngine {
@@ -78,7 +76,6 @@ impl DrumEngine {
         if !(8_000..=384_000).contains(&sample_rate) {
             return Err(EngineError("sample rate must be 8000..=384000"));
         }
-        let room_frames = (sample_rate as usize / 3).max(1);
         let maximum_age = (kit.manifest.max_tail_seconds * sample_rate as f32)
             .round()
             .max(1.0) as u64;
@@ -92,10 +89,8 @@ impl DrumEngine {
             filter: FilterState::default(),
             detector: 0.0,
             slow_detector: 0.0,
-            compressor: 0.0,
-            room_left: vec![0.0; room_frames].into_boxed_slice(),
-            room_right: vec![0.0; room_frames].into_boxed_slice(),
-            room_index: 0,
+            compressor: 1.0,
+            hard_reset_requested: false,
         })
     }
 
@@ -111,13 +106,17 @@ impl DrumEngine {
         for voice in &mut self.voices {
             *voice = ActiveVoice::default();
         }
-        self.room_left.fill(0.0);
-        self.room_right.fill(0.0);
-        self.room_index = 0;
         self.filter = FilterState::default();
         self.detector = 0.0;
         self.slow_detector = 0.0;
-        self.compressor = 0.0;
+        self.compressor = 1.0;
+        self.hard_reset_requested = true;
+    }
+
+    /// Returns and clears the callback-local request to reset host-owned
+    /// downstream effects after Panic/All Notes Off.
+    pub fn take_hard_reset_request(&mut self) -> bool {
+        std::mem::take(&mut self.hard_reset_requested)
     }
 
     pub fn drain(&mut self) {
@@ -327,9 +326,10 @@ impl DrumEngine {
         left *= shape;
         right *= shape;
 
-        let threshold = 0.28;
-        let target_reduction = if peak > threshold {
-            (threshold / peak).sqrt()
+        let shaped_peak = left.abs().max(right.abs());
+        let threshold = 0.32;
+        let target_reduction = if shaped_peak > threshold {
+            (threshold / shaped_peak).powf(0.75)
         } else {
             1.0
         };
@@ -339,32 +339,22 @@ impl DrumEngine {
             0.002
         };
         self.compressor += (target_reduction - self.compressor) * coefficient;
-        let crushed_left = soft_clip(left * 5.0) * self.compressor;
-        let crushed_right = soft_clip(right * 5.0) * self.compressor;
-        left += crushed_left * settings.parallel_compression * 0.35;
-        right += crushed_right * settings.parallel_compression * 0.35;
+        let parallel_mix = settings.parallel_compression * 0.3;
+        let compressed_left = soft_saturate(left * self.compressor * 1.5);
+        let compressed_right = soft_saturate(right * self.compressor * 1.5);
+        left += (compressed_left - left) * parallel_mix;
+        right += (compressed_right - right) * parallel_mix;
 
-        let room_left = self.room_left[self.room_index];
-        let room_right = self.room_right[self.room_index];
-        let feedback = 0.15 + settings.room_decay * 0.72;
-        self.room_left[self.room_index] = finite(right * 0.25 + room_right * feedback);
-        self.room_right[self.room_index] = finite(left * 0.25 + room_left * feedback);
-        self.room_index += 1;
-        if self.room_index == self.room_left.len() {
-            self.room_index = 0;
+        if settings.saturation > 0.0 {
+            let drive = 1.0 + settings.saturation * 5.0;
+            left = soft_saturate(left * drive) / drive;
+            right = soft_saturate(right * drive) / drive;
         }
-        left += room_left * settings.room_amount;
-        right += room_right * settings.room_amount;
-
-        let drive = 1.0 + settings.saturation * 6.0;
         let makeup = db_to_gain(settings.output_gain_db);
         let ceiling = db_to_gain(settings.ceiling_dbfs);
         StereoFrame {
-            left: protect(soft_clip(left * drive) / soft_clip(drive) * makeup, ceiling),
-            right: protect(
-                soft_clip(right * drive) / soft_clip(drive) * makeup,
-                ceiling,
-            ),
+            left: protect(left * makeup, ceiling),
+            right: protect(right * makeup, ceiling),
         }
     }
 }
@@ -415,8 +405,13 @@ fn read_sample(frames: &[SampleFrame], position: f32) -> SampleFrame {
     }
 }
 
-fn soft_clip(value: f32) -> f32 {
-    value / (1.0 + value.abs())
+fn soft_saturate(value: f32) -> f32 {
+    let magnitude = value.abs();
+    if magnitude >= 1.5 {
+        value.signum()
+    } else {
+        value * (1.0 - magnitude * magnitude / 6.75)
+    }
 }
 
 fn protect(value: f32, ceiling: f32) -> f32 {
@@ -584,6 +579,27 @@ mod tests {
     }
 
     #[test]
+    fn bus_processing_preserves_useful_velocity_dynamics() {
+        let peak_at = |velocity| {
+            let (sender, receiver) = event_queue();
+            let mut engine = DrumEngine::new(48_000, modeled_kit(), receiver).unwrap();
+            sender
+                .push(DrumEvent::NoteOn { note: 36, velocity })
+                .unwrap();
+            let mut output = [StereoFrame::SILENCE; 2_048];
+            engine.process(&mut output);
+            output
+                .iter()
+                .map(|frame| frame.left.abs().max(frame.right.abs()))
+                .fold(0.0_f32, f32::max)
+        };
+        let quiet = peak_at(40);
+        let loud = peak_at(120);
+        assert!(quiet > 0.0);
+        assert!(loud > quiet * 2.5, "quiet {quiet}, loud {loud}");
+    }
+
+    #[test]
     fn all_notes_off_is_immediate_and_drain_releases() {
         let (sender, receiver) = event_queue();
         let mut engine = DrumEngine::new(48_000, modeled_kit(), receiver).unwrap();
@@ -600,6 +616,38 @@ mod tests {
         engine.process(&mut stopped);
         assert_eq!(engine.active_voice_count(), 0);
         assert!(stopped.iter().all(|frame| *frame == StereoFrame::SILENCE));
+        assert!(engine.take_hard_reset_request());
+        assert!(!engine.take_hard_reset_request());
+    }
+
+    #[test]
+    fn legacy_room_fields_are_preserved_metadata_not_a_delay_processor() {
+        let mut dry = modeled_kit();
+        dry.manifest.processing.room_amount = 0.0;
+        dry.manifest.processing.room_decay = 0.0;
+        let mut legacy = modeled_kit();
+        legacy.manifest.processing.room_amount = 1.0;
+        legacy.manifest.processing.room_decay = 1.0;
+        let (_, dry_receiver) = event_queue();
+        let (_, legacy_receiver) = event_queue();
+        let mut dry_engine = DrumEngine::new(48_000, dry, dry_receiver).unwrap();
+        let mut legacy_engine = DrumEngine::new(48_000, legacy, legacy_receiver).unwrap();
+        let input = [
+            StereoFrame {
+                left: 0.25,
+                right: -0.125,
+            },
+            StereoFrame {
+                left: -0.4,
+                right: 0.3,
+            },
+        ];
+        for frame in input {
+            assert_eq!(
+                dry_engine.process_bus(frame),
+                legacy_engine.process_bus(frame)
+            );
+        }
     }
 
     #[test]
