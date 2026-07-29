@@ -1,0 +1,7 @@
+{
+  "recipe_version": 1,
+  "kit_id": "industrial-metal",
+  "display_name": "Industrial Metal",
+  "design": "hybrid-acoustic-metallic",
+  "source_policy": "Keep drive adjustable and imported acoustic attacks unflattened; preserve provenance and hashes."
+}

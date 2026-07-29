@@ -1,0 +1,18 @@
+[package]
+name = "shr-kit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Offline compiler and validator for SHR drum kits"
+
+[[bin]]
+name = "shr-kit"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+hound.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+shr-drums = { path = "../shr-drums" }
