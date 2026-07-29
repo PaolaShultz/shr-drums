@@ -20,9 +20,10 @@ repository.
   `https://drumgizmo.org/wiki/doku.php?id=kits:muldjordkit`.
 
 The importer selects velocity layers and round robins, renames copied WAV
-files, adds reviewed resonance metadata and modeled body layers, and preserves
-the upstream licence and README in each local package. It does not normalize
-the source hits.
+files, adds reviewed resonance metadata and modeled body layers to tunable
+shells, and preserves acoustic hats, crashes, and rides as sampled one-shots.
+It also preserves the upstream licence and README in each local package. It
+does not normalize the source hits.
 
 Reproduce after placing and extracting the verified archive below
 `user/downloads/`:

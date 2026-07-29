@@ -100,7 +100,7 @@ fn factory(output: &Path) -> Result<()> {
     fs::create_dir_all(output)?;
     for family in [
         Family::BigRock,
-        Family::IndustrialMetal,
+        Family::ExperimentalNoise,
         Family::ElectronicHouse,
     ] {
         build_factory_kit(output, family)?;
@@ -122,7 +122,7 @@ fn import_muldjord(source: &Path, output: &Path) -> Result<()> {
         );
     }
     fs::create_dir_all(output)?;
-    for family in [Family::BigRock, Family::IndustrialMetal] {
+    for family in [Family::BigRock, Family::ExperimentalNoise] {
         build_muldjord_kit(source, output, family)?;
     }
     Ok(())
@@ -131,7 +131,7 @@ fn import_muldjord(source: &Path, output: &Path) -> Result<()> {
 fn build_muldjord_kit(source: &Path, output: &Path, family: Family) -> Result<()> {
     let suffix = match family {
         Family::BigRock => "big-rock-muldjord",
-        Family::IndustrialMetal => "industrial-metal-muldjord",
+        Family::ExperimentalNoise => "experimental-noise-muldjord",
         Family::ElectronicHouse => unreachable!("Muldjord import is acoustic"),
     };
     let directory = output.join(format!("{suffix}.shrkit"));
@@ -151,7 +151,7 @@ fn build_muldjord_kit(source: &Path, output: &Path, family: Family) -> Result<()
             source.join("README.txt"),
             directory.join("SOURCE-README.txt"),
         )?;
-        let pieces: [(&str, &str, u8, f32, &str, Option<u8>, bool, [&str; 6]); 8] = [
+        let pieces: [(&str, &str, u8, f32, &str, Option<u8>, bool, [&str; 6]); 9] = [
             (
                 "kick",
                 "Kick",
@@ -288,6 +288,23 @@ fn build_muldjord_kit(source: &Path, output: &Path, family: Family) -> Result<()
                     "CrashL/9-CrashL.wav",
                 ],
             ),
+            (
+                "ride",
+                "Ride",
+                51,
+                3_000.0,
+                "cymbal",
+                None,
+                true,
+                [
+                    "RideL/1-RideL.wav",
+                    "RideL/2-RideL.wav",
+                    "RideL/5-RideL.wav",
+                    "RideL/6-RideL.wav",
+                    "RideL/9-RideL.wav",
+                    "RideL/10-RideL.wav",
+                ],
+            ),
         ];
         let mut voices = Vec::new();
         for (id, name, note, pitch, voice_family, choke, broadband, files) in pieces {
@@ -295,6 +312,7 @@ fn build_muldjord_kit(source: &Path, output: &Path, family: Family) -> Result<()
                 "closed-hat" => "closed",
                 "open-hat" => "open",
                 "crash" => "crash",
+                "ride" => "ride",
                 _ => "hit",
             };
             let mut samples = Vec::new();
@@ -327,13 +345,18 @@ fn build_muldjord_kit(source: &Path, output: &Path, family: Family) -> Result<()
                     sha256: sha256_hex(&bytes),
                 });
             }
+            let sampled_only = broadband && matches!(family, Family::BigRock);
             voices.push(VoiceManifest {
                 id: id.into(),
                 display_name: name.into(),
                 trigger_note: note,
                 articulation: articulation.into(),
                 family: voice_family.into(),
-                kind: VoiceKind::Hybrid,
+                kind: if sampled_only {
+                    VoiceKind::Sampled
+                } else {
+                    VoiceKind::Hybrid
+                },
                 choke_group: choke,
                 gain_db: if broadband { -9.0 } else { -6.0 },
                 pan: match id {
@@ -346,7 +369,7 @@ fn build_muldjord_kit(source: &Path, output: &Path, family: Family) -> Result<()
                     hold_ms: 4.0,
                     decay_ms: match id {
                         "open-hat" => 2_000.0,
-                        "crash" => 7_000.0,
+                        "crash" | "ride" => 7_000.0,
                         _ => 900.0,
                     },
                     release_ms: 30.0,
@@ -378,7 +401,7 @@ fn build_muldjord_kit(source: &Path, output: &Path, family: Family) -> Result<()
                 } else {
                     FollowKeyRule::Tonic
                 },
-                modeled: Some(ModeledParameters {
+                modeled: (!sampled_only).then_some(ModeledParameters {
                     body_hz: pitch,
                     body_decay_ms: if broadband { 180.0 } else { 700.0 },
                     pitch_drop_cents: if id == "kick" { 500.0 } else { 0.0 },
@@ -388,7 +411,7 @@ fn build_muldjord_kit(source: &Path, output: &Path, family: Family) -> Result<()
                         0.03
                     },
                     noise_decay_ms: if broadband { 900.0 } else { 120.0 },
-                    metallic_amount: if matches!(family, Family::IndustrialMetal) {
+                    metallic_amount: if matches!(family, Family::ExperimentalNoise) {
                         0.5
                     } else {
                         0.0
@@ -423,6 +446,7 @@ fn build_muldjord_kit(source: &Path, output: &Path, family: Family) -> Result<()
                 ("closed".into(), 42),
                 ("open".into(), 46),
                 ("crash".into(), 49),
+                ("ride".into(), 51),
             ]),
             voices,
             processing: processing(family),
@@ -454,7 +478,7 @@ fn wav_metadata(path: &Path) -> Result<SampleMetadata> {
 #[derive(Clone, Copy)]
 enum Family {
     BigRock,
-    IndustrialMetal,
+    ExperimentalNoise,
     ElectronicHouse,
 }
 
@@ -462,7 +486,7 @@ impl Family {
     fn id(self) -> &'static str {
         match self {
             Self::BigRock => "big-rock",
-            Self::IndustrialMetal => "industrial-metal",
+            Self::ExperimentalNoise => "experimental-noise",
             Self::ElectronicHouse => "electronic-house",
         }
     }
@@ -470,7 +494,7 @@ impl Family {
     fn name(self) -> &'static str {
         match self {
             Self::BigRock => "Big Rock",
-            Self::IndustrialMetal => "Industrial Metal",
+            Self::ExperimentalNoise => "Experimental Noise",
             Self::ElectronicHouse => "Electronic House",
         }
     }
@@ -504,6 +528,7 @@ fn build_factory_kit(root: &Path, family: Family) -> Result<()> {
             ),
             ("open-hat", "Open Hat", 46, 7_000.0, "cymbal", Some(1), true),
             ("crash", "Crash", 49, 4_500.0, "cymbal", None, true),
+            ("ride", "Ride", 51, 3_000.0, "cymbal", None, true),
         ];
         let mut voices = Vec::new();
         for (piece_index, (id, name, note, pitch, family_name, choke, broadband)) in
@@ -513,6 +538,7 @@ fn build_factory_kit(root: &Path, family: Family) -> Result<()> {
                 "closed-hat" => "closed",
                 "open-hat" => "open",
                 "crash" => "crash",
+                "ride" => "ride",
                 _ => "hit",
             };
             let mut samples = Vec::new();
@@ -546,8 +572,11 @@ fn build_factory_kit(root: &Path, family: Family) -> Result<()> {
                 }
             }
             let electronic = matches!(family, Family::ElectronicHouse);
-            let metallic = matches!(family, Family::IndustrialMetal);
-            let kind = if sampled {
+            let metallic = matches!(family, Family::ExperimentalNoise);
+            let sampled_only = sampled && broadband && matches!(family, Family::BigRock);
+            let kind = if sampled_only {
+                VoiceKind::Sampled
+            } else if sampled {
                 VoiceKind::Hybrid
             } else {
                 VoiceKind::Modeled
@@ -571,7 +600,7 @@ fn build_factory_kit(root: &Path, family: Family) -> Result<()> {
                     hold_ms: if broadband { 5.0 } else { 2.0 },
                     decay_ms: match id {
                         "open-hat" => 1_600.0,
-                        "crash" => 5_500.0,
+                        "crash" | "ride" => 5_500.0,
                         _ => 650.0,
                     },
                     release_ms: 25.0,
@@ -608,7 +637,7 @@ fn build_factory_kit(root: &Path, family: Family) -> Result<()> {
                 } else {
                     FollowKeyRule::Tonic
                 },
-                modeled: Some(ModeledParameters {
+                modeled: (!sampled_only).then_some(ModeledParameters {
                     body_hz: pitch,
                     body_decay_ms: if broadband { 180.0 } else { 600.0 },
                     pitch_drop_cents: if id == "kick" {
@@ -664,6 +693,7 @@ fn build_factory_kit(root: &Path, family: Family) -> Result<()> {
                 ("closed".into(), 42),
                 ("open".into(), 46),
                 ("crash".into(), 49),
+                ("ride".into(), 51),
             ]),
             voices,
             processing: processing(family),
@@ -696,7 +726,7 @@ fn processing(family: Family) -> KitProcessing {
             output_gain_db: -7.0,
             ceiling_dbfs: -1.5,
         },
-        Family::IndustrialMetal => KitProcessing {
+        Family::ExperimentalNoise => KitProcessing {
             high_pass_hz: 22.0,
             low_pass_hz: 16_000.0,
             saturation: 0.52,
@@ -829,11 +859,11 @@ mod tests {
     #[test]
     fn all_factory_families_have_distinct_bounded_processing() {
         let rock = processing(Family::BigRock);
-        let metal = processing(Family::IndustrialMetal);
+        let noise = processing(Family::ExperimentalNoise);
         let house = processing(Family::ElectronicHouse);
-        assert_ne!(rock, metal);
-        assert_ne!(metal, house);
-        for settings in [rock, metal, house] {
+        assert_ne!(rock, noise);
+        assert_ne!(noise, house);
+        for settings in [rock, noise, house] {
             assert!(settings.ceiling_dbfs <= -1.0);
             assert!(settings.room_amount <= 1.0);
         }
@@ -847,13 +877,32 @@ mod tests {
         factory(&directory).unwrap();
         for family in [
             Family::BigRock,
-            Family::IndustrialMetal,
+            Family::ExperimentalNoise,
             Family::ElectronicHouse,
         ] {
             let package = directory.join(format!("{}.shrkit", family.id()));
             let prepared =
                 load_package(&package, ProjectKey::default(), &KitTuning::default()).unwrap();
             assert_eq!(prepared.manifest.kit_id, family.id());
+            if matches!(family, Family::BigRock) {
+                let ride = prepared
+                    .manifest
+                    .voices
+                    .iter()
+                    .find(|voice| voice.id == "ride")
+                    .unwrap();
+                assert_eq!(ride.trigger_note, 51);
+                for id in ["closed-hat", "open-hat", "crash", "ride"] {
+                    let cymbal = prepared
+                        .manifest
+                        .voices
+                        .iter()
+                        .find(|voice| voice.id == id)
+                        .unwrap();
+                    assert_eq!(cymbal.kind, VoiceKind::Sampled);
+                    assert!(cymbal.modeled.is_none());
+                }
+            }
         }
         fs::remove_dir_all(directory).unwrap();
     }
