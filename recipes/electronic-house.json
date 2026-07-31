@@ -3,5 +3,8 @@
   "kit_id": "electronic-house",
   "display_name": "Electronic House",
   "design": "modeled",
-  "source_policy": "No external samples are required."
+  "source_policy": "No external samples, recordings, or downloaded audio are permitted.",
+  "voice_count": 27,
+  "engine_minimum": "0.2.0",
+  "compatibility": "Preserve notes and IDs 36 kick, 38 snare, 42 closed-hat, 45 low-tom, 46 open-hat, 47 mid-tom, 49 crash, 50 high-tom, and 51 ride."
 }

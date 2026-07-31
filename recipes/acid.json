@@ -1,0 +1,10 @@
+{
+  "recipe_version": 1,
+  "kit_id": "acid",
+  "display_name": "Acid",
+  "design": "modeled",
+  "source_policy": "No samples, recordings, downloaded audio, or generated audio assets are permitted.",
+  "voice_count": 27,
+  "engine_minimum": "0.2.0",
+  "compatibility": "Keep GM/core notes 36 kick, 38 snare, 39 clap, 42 closed-hat, 45 low-tom, 46 open-hat, 47 mid-tom, 49 crash, 50 high-tom, and 51 ride."
+}

@@ -53,6 +53,36 @@ impl PreparedKit {
             .map(|sample| sample.frames.len() * std::mem::size_of::<SampleFrame>())
             .sum()
     }
+
+    /// Offline-review utility: bypass authored model/bus colour while retaining
+    /// gain staging, filtering, and the final safety ceiling.
+    pub fn bypass_intentional_colour(&mut self) {
+        self.manifest.processing.saturation = 0.0;
+        self.manifest.processing.transient = 0.0;
+        self.manifest.processing.body = 0.0;
+        self.manifest.processing.parallel_compression = 0.0;
+        self.manifest.processing.output_gain_db = self.manifest.processing.output_gain_db.min(0.5);
+        for voice in &mut self.manifest.voices {
+            bypass_voice_colour(voice);
+        }
+        for voice in &mut self.voices {
+            bypass_voice_colour(&mut voice.manifest);
+        }
+    }
+}
+
+fn bypass_voice_colour(voice: &mut VoiceManifest) {
+    let Some(model) = &mut voice.advanced_model else {
+        return;
+    };
+    model.body.drive.amount = 0.0;
+    model.click.drive.amount = 0.0;
+    model.noise.drive.amount = 0.0;
+    model.master_drive.amount = 0.0;
+    model.modulation.feedback = 0.0;
+    for mode in &mut model.modes {
+        mode.drive.amount = 0.0;
+    }
 }
 
 pub fn load_package(
@@ -280,6 +310,7 @@ mod tests {
             family: "kick".into(),
             kind: VoiceKind::Modeled,
             choke_group: None,
+            choke_release_ms: 0.0,
             gain_db: 0.0,
             pan: 0.0,
             envelope: Envelope {
@@ -303,6 +334,7 @@ mod tests {
                 noise_decay_ms: 1.0,
                 metallic_amount: 0.0,
             }),
+            advanced_model: None,
         }
     }
 

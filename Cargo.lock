@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "shr-drums"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "hound",
  "serde",
@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "shr-kit"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "hound",

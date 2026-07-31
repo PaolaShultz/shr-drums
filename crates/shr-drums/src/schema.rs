@@ -10,6 +10,8 @@ pub const MAX_POLYPHONY: usize = 64;
 pub const MAX_TAIL_SECONDS: f32 = 16.0;
 pub const MAX_PITCH_SHIFT_CENTS: i16 = 2_400;
 pub const MAX_DECODED_SAMPLE_BYTES: u64 = 384 * 1024 * 1024;
+pub const MAX_MODEL_MODES: usize = 12;
+pub const MAX_MODEL_BURSTS: usize = 8;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -64,6 +66,8 @@ pub struct VoiceManifest {
     pub family: String,
     pub kind: VoiceKind,
     pub choke_group: Option<u8>,
+    #[serde(default)]
+    pub choke_release_ms: f32,
     pub gain_db: f32,
     pub pan: f32,
     pub envelope: Envelope,
@@ -73,6 +77,8 @@ pub struct VoiceManifest {
     pub tuning_limits: TuningLimits,
     pub follow_key: FollowKeyRule,
     pub modeled: Option<ModeledParameters>,
+    #[serde(default)]
+    pub advanced_model: Option<AdvancedModel>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -130,6 +136,190 @@ pub struct ModeledParameters {
     pub noise_amount: f32,
     pub noise_decay_ms: f32,
     pub metallic_amount: f32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ModelAlgorithm {
+    Kick,
+    Snare,
+    Clap,
+    Hat,
+    Tom,
+    Cymbal,
+    Percussion,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OscillatorShape {
+    Sine,
+    Triangle,
+    Pulse,
+    Shaped,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FilterMode {
+    LowPass,
+    HighPass,
+    BandPass,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DriveCurve {
+    SoftClip,
+    HardClip,
+    Cubic,
+    Fold,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PitchEnvelope {
+    pub start_cents: f32,
+    pub mid_cents: f32,
+    pub attack_ms: f32,
+    pub decay_ms: f32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DriveStage {
+    pub pre_gain_db: f32,
+    pub amount: f32,
+    pub curve: DriveCurve,
+    pub post_gain_db: f32,
+}
+
+impl Default for DriveStage {
+    fn default() -> Self {
+        Self {
+            pre_gain_db: 0.0,
+            amount: 0.0,
+            curve: DriveCurve::SoftClip,
+            post_gain_db: 0.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BodyLayer {
+    pub level: f32,
+    pub decay_ms: f32,
+    pub pulse_width: f32,
+    pub shape: f32,
+    pub overtone_level: f32,
+    pub overtone_ratio: f32,
+    pub drive: DriveStage,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClickLayer {
+    pub level: f32,
+    pub decay_ms: f32,
+    pub tone_hz: f32,
+    pub noise_mix: f32,
+    pub high_pass_hz: f32,
+    pub drive: DriveStage,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoiseLayer {
+    pub level: f32,
+    pub attack_ms: f32,
+    pub decay_ms: f32,
+    pub tail_level: f32,
+    pub tail_decay_ms: f32,
+    pub filter: FilterMode,
+    pub cutoff_hz: f32,
+    pub resonance: f32,
+    pub colour: f32,
+    pub drive: DriveStage,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResonantMode {
+    pub ratio: f32,
+    pub level: f32,
+    pub decay_ms: f32,
+    pub pan: f32,
+    pub shape: OscillatorShape,
+    pub drive: DriveStage,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoiseBurst {
+    pub time_ms: f32,
+    pub decay_ms: f32,
+    pub level: f32,
+    pub pan: f32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Modulation {
+    pub fm_ratio: f32,
+    pub fm_index: f32,
+    pub phase_amount: f32,
+    pub ring_ratio: f32,
+    pub ring_amount: f32,
+    pub feedback: f32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct StereoModel {
+    pub width: f32,
+    pub micro_delay_ms: f32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct VelocityResponse {
+    pub click: f32,
+    pub noise: f32,
+    pub drive: f32,
+    pub decay: f32,
+    pub brightness: f32,
+    pub pitch: f32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SeededVariation {
+    pub pitch_cents: f32,
+    pub timing_ms: f32,
+    pub level: f32,
+    pub stereo: f32,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdvancedModel {
+    pub algorithm: ModelAlgorithm,
+    pub oscillator: OscillatorShape,
+    pub base_hz: f32,
+    pub pitch: PitchEnvelope,
+    pub body: BodyLayer,
+    pub click: ClickLayer,
+    pub noise: NoiseLayer,
+    #[serde(default)]
+    pub modes: Vec<ResonantMode>,
+    #[serde(default)]
+    pub bursts: Vec<NoiseBurst>,
+    pub modulation: Modulation,
+    pub master_drive: DriveStage,
+    pub stereo: StereoModel,
+    pub velocity: VelocityResponse,
+    pub variation: SeededVariation,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -256,6 +446,7 @@ impl KitManifest {
         }
         validate_processing(self.processing)?;
         let mut ids = BTreeSet::new();
+        let mut notes = BTreeSet::new();
         let mut assignments = 0usize;
         let mut decoded_sample_bytes = 0u64;
         for voice in &self.voices {
@@ -269,9 +460,23 @@ impl KitManifest {
                     voice.id
                 )));
             }
+            if !notes.insert(voice.trigger_note) {
+                return Err(ValidationError::new(format!(
+                    "duplicate trigger note {}",
+                    voice.trigger_note
+                )));
+            }
             if voice.trigger_note > 127 || voice.choke_group == Some(0) {
                 return Err(ValidationError::new(format!(
                     "{} has an invalid trigger or choke group",
+                    voice.id
+                )));
+            }
+            if !voice.choke_release_ms.is_finite()
+                || !(0.0..=500.0).contains(&voice.choke_release_ms)
+            {
+                return Err(ValidationError::new(format!(
+                    "{} choke release is out of range",
                     voice.id
                 )));
             }
@@ -294,13 +499,16 @@ impl KitManifest {
                         voice.id
                     )))
                 }
-                VoiceKind::Modeled if voice.modeled.is_none() => {
+                VoiceKind::Modeled if voice.modeled.is_none() && voice.advanced_model.is_none() => {
                     return Err(ValidationError::new(format!(
                         "{} modeled voice has no model",
                         voice.id
                     )))
                 }
-                VoiceKind::Hybrid if voice.samples.is_empty() || voice.modeled.is_none() => {
+                VoiceKind::Hybrid
+                    if voice.samples.is_empty()
+                        || (voice.modeled.is_none() && voice.advanced_model.is_none()) =>
+                {
                     return Err(ValidationError::new(format!(
                         "{} hybrid voice needs samples and a model",
                         voice.id
@@ -518,7 +726,134 @@ fn validate_tuning(voice: &VoiceManifest) -> Result<(), ValidationError> {
             )));
         }
     }
+    if let Some(model) = &voice.advanced_model {
+        validate_advanced_model(model, &voice.id)?;
+    }
     Ok(())
+}
+
+fn validate_advanced_model(model: &AdvancedModel, id: &str) -> Result<(), ValidationError> {
+    if !finite_range(model.base_hz, 15.0, 20_000.0)
+        || !finite_range(model.pitch.start_cents, -4_800.0, 4_800.0)
+        || !finite_range(model.pitch.mid_cents, -4_800.0, 4_800.0)
+        || !finite_range(model.pitch.attack_ms, 0.0, 500.0)
+        || !finite_range(model.pitch.decay_ms, 0.1, 5_000.0)
+        || !finite_range(model.body.level, 0.0, 4.0)
+        || !finite_range(model.body.decay_ms, 1.0, 30_000.0)
+        || !finite_range(model.body.pulse_width, 0.05, 0.95)
+        || !finite_range(model.body.shape, 0.0, 1.0)
+        || !finite_range(model.body.overtone_level, 0.0, 2.0)
+        || !finite_range(model.body.overtone_ratio, 0.25, 16.0)
+        || !finite_range(model.click.level, 0.0, 4.0)
+        || !finite_range(model.click.decay_ms, 0.1, 500.0)
+        || !finite_range(model.click.tone_hz, 20.0, 20_000.0)
+        || !finite_range(model.click.noise_mix, 0.0, 1.0)
+        || !finite_range(model.click.high_pass_hz, 5.0, 20_000.0)
+        || !finite_range(model.noise.level, 0.0, 4.0)
+        || !finite_range(model.noise.attack_ms, 0.0, 2_000.0)
+        || !finite_range(model.noise.decay_ms, 0.1, 30_000.0)
+        || !finite_range(model.noise.tail_level, 0.0, 4.0)
+        || !finite_range(model.noise.tail_decay_ms, 0.1, 30_000.0)
+        || !finite_range(model.noise.cutoff_hz, 20.0, 20_000.0)
+        || !finite_range(model.noise.resonance, 0.0, 0.98)
+        || !finite_range(model.noise.colour, -1.0, 1.0)
+        || model.modes.len() > MAX_MODEL_MODES
+        || model.bursts.len() > MAX_MODEL_BURSTS
+        || !finite_range(model.modulation.fm_ratio, 0.0, 32.0)
+        || !finite_range(model.modulation.fm_index, 0.0, 20.0)
+        || !finite_range(model.modulation.phase_amount, 0.0, 4.0)
+        || !finite_range(model.modulation.ring_ratio, 0.0, 32.0)
+        || !finite_range(model.modulation.ring_amount, 0.0, 1.0)
+        || !finite_range(model.modulation.feedback, -0.95, 0.95)
+        || !finite_range(model.stereo.width, 0.0, 1.0)
+        || !finite_range(model.stereo.micro_delay_ms, 0.0, 2.0)
+        || !finite_range(model.velocity.click, -1.0, 2.0)
+        || !finite_range(model.velocity.noise, -1.0, 2.0)
+        || !finite_range(model.velocity.drive, -1.0, 2.0)
+        || !finite_range(model.velocity.decay, -1.0, 2.0)
+        || !finite_range(model.velocity.brightness, -1.0, 2.0)
+        || !finite_range(model.velocity.pitch, -1.0, 2.0)
+        || !finite_range(model.variation.pitch_cents, 0.0, 100.0)
+        || !finite_range(model.variation.timing_ms, 0.0, 5.0)
+        || !finite_range(model.variation.level, 0.0, 0.5)
+        || !finite_range(model.variation.stereo, 0.0, 1.0)
+    {
+        return Err(ValidationError::new(format!(
+            "{id} advanced model parameters are out of range"
+        )));
+    }
+    for drive in [
+        model.body.drive,
+        model.click.drive,
+        model.noise.drive,
+        model.master_drive,
+    ] {
+        validate_drive(drive, id)?;
+    }
+    let structure_is_valid = match model.algorithm {
+        ModelAlgorithm::Kick => model.body.level > 0.0 && model.click.level > 0.0,
+        ModelAlgorithm::Snare => model.modes.len() >= 2 && model.noise.level > 0.0,
+        ModelAlgorithm::Clap => model.bursts.len() >= 3 && model.noise.level > 0.0,
+        ModelAlgorithm::Hat => model.modes.len() >= 3 && model.noise.level > 0.0,
+        ModelAlgorithm::Tom => model.body.level > 0.0 && model.modes.len() >= 2,
+        ModelAlgorithm::Cymbal => model.modes.len() >= 5 && model.noise.tail_level > 0.0,
+        ModelAlgorithm::Percussion => {
+            model.body.level > 0.0
+                || model.click.level > 0.0
+                || model.noise.level > 0.0
+                || !model.modes.is_empty()
+                || !model.bursts.is_empty()
+        }
+    };
+    if !structure_is_valid {
+        return Err(ValidationError::new(format!(
+            "{id} advanced model lacks required algorithm layers"
+        )));
+    }
+    for mode in &model.modes {
+        if !finite_range(mode.ratio, 0.05, 64.0)
+            || !finite_range(mode.level, 0.0, 4.0)
+            || !finite_range(mode.decay_ms, 0.1, 30_000.0)
+            || !finite_range(mode.pan, -1.0, 1.0)
+        {
+            return Err(ValidationError::new(format!(
+                "{id} resonant mode is out of range"
+            )));
+        }
+        validate_drive(mode.drive, id)?;
+    }
+    let mut last_burst = -1.0_f32;
+    for burst in &model.bursts {
+        if !finite_range(burst.time_ms, 0.0, 500.0)
+            || !finite_range(burst.decay_ms, 0.1, 1_000.0)
+            || !finite_range(burst.level, 0.0, 4.0)
+            || !finite_range(burst.pan, -1.0, 1.0)
+            || burst.time_ms < last_burst
+        {
+            return Err(ValidationError::new(format!(
+                "{id} noise burst is invalid or not time ordered"
+            )));
+        }
+        last_burst = burst.time_ms;
+    }
+    Ok(())
+}
+
+fn validate_drive(drive: DriveStage, id: &str) -> Result<(), ValidationError> {
+    if finite_range(drive.pre_gain_db, -24.0, 36.0)
+        && finite_range(drive.amount, 0.0, 1.0)
+        && finite_range(drive.post_gain_db, -36.0, 24.0)
+    {
+        Ok(())
+    } else {
+        Err(ValidationError::new(format!(
+            "{id} drive stage is out of range"
+        )))
+    }
+}
+
+fn finite_range(value: f32, minimum: f32, maximum: f32) -> bool {
+    value.is_finite() && (minimum..=maximum).contains(&value)
 }
 
 fn validate_processing(processing: KitProcessing) -> Result<(), ValidationError> {
@@ -629,6 +964,7 @@ mod tests {
                 family: "kick".into(),
                 kind: VoiceKind::Modeled,
                 choke_group: None,
+                choke_release_ms: 0.0,
                 gain_db: -6.0,
                 pan: 0.0,
                 envelope: Envelope {
@@ -652,6 +988,7 @@ mod tests {
                     noise_decay_ms: 15.0,
                     metallic_amount: 0.0,
                 }),
+                advanced_model: None,
             }],
             processing: KitProcessing {
                 high_pass_hz: 10.0,
@@ -680,6 +1017,27 @@ mod tests {
             .unwrap()
             .insert("future_behavior".into(), serde_json::Value::Bool(true));
         assert!(KitManifest::from_json(&serde_json::to_vec(&value).unwrap()).is_err());
+    }
+
+    #[test]
+    fn legacy_format_one_voice_without_advanced_fields_uses_safe_defaults() {
+        let mut value = serde_json::to_value(valid_manifest()).unwrap();
+        let voice = value["voices"][0].as_object_mut().unwrap();
+        voice.remove("choke_release_ms");
+        voice.remove("advanced_model");
+        let migrated = KitManifest::from_json(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(migrated.voices[0].choke_release_ms, 0.0);
+        assert!(migrated.voices[0].advanced_model.is_none());
+        assert!(migrated.voices[0].modeled.is_some());
+    }
+
+    #[test]
+    fn duplicate_trigger_notes_are_rejected() {
+        let mut manifest = valid_manifest();
+        let mut duplicate = manifest.voices[0].clone();
+        duplicate.id = "another-kick".into();
+        manifest.voices.push(duplicate);
+        assert!(manifest.validate().is_err());
     }
 
     #[test]

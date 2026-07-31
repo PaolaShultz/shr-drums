@@ -1,3 +1,4 @@
+use crate::model::{self, ModelState};
 use crate::package::{db_to_gain, PreparedKit, SampleFrame};
 use crate::queue::{DrumEvent, EventReceiver};
 use crate::schema::VoiceKind;
@@ -17,7 +18,7 @@ impl StereoFrame {
     };
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct ActiveVoice {
     active: bool,
     definition: usize,
@@ -26,10 +27,13 @@ struct ActiveVoice {
     sample_increment: f32,
     age: u64,
     released: bool,
+    choked: bool,
     envelope: f32,
     phase: f32,
     noise_state: u32,
     velocity_gain: f32,
+    velocity_character: f32,
+    model_state: ModelState,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -53,6 +57,14 @@ impl fmt::Display for EngineError {
 
 impl std::error::Error for EngineError {}
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct EngineDiagnostics {
+    pub intentional_internal_peak: f32,
+    pub intentional_clip_events: u64,
+    pub bus_pre_safety_peak: f32,
+    pub safety_ceiling_events: u64,
+}
+
 pub struct DrumEngine {
     sample_rate: u32,
     kit: PreparedKit,
@@ -64,6 +76,7 @@ pub struct DrumEngine {
     detector: f32,
     slow_detector: f32,
     compressor: f32,
+    diagnostics: EngineDiagnostics,
     hard_reset_requested: bool,
 }
 
@@ -90,6 +103,7 @@ impl DrumEngine {
             detector: 0.0,
             slow_detector: 0.0,
             compressor: 1.0,
+            diagnostics: EngineDiagnostics::default(),
             hard_reset_requested: false,
         })
     }
@@ -102,6 +116,14 @@ impl DrumEngine {
         self.voices.iter().filter(|voice| voice.active).count()
     }
 
+    pub fn diagnostics(&self) -> EngineDiagnostics {
+        self.diagnostics
+    }
+
+    pub fn reset_diagnostics(&mut self) {
+        self.diagnostics = EngineDiagnostics::default();
+    }
+
     pub fn all_notes_off(&mut self) {
         for voice in &mut self.voices {
             *voice = ActiveVoice::default();
@@ -110,6 +132,7 @@ impl DrumEngine {
         self.detector = 0.0;
         self.slow_detector = 0.0;
         self.compressor = 1.0;
+        self.diagnostics = EngineDiagnostics::default();
         self.hard_reset_requested = true;
     }
 
@@ -169,6 +192,20 @@ impl DrumEngine {
             if self.kit.voices[definition].manifest.trigger_note != note {
                 continue;
             }
+            // Electronic drum voices retrigger one oscillator/noise state
+            // instead of stacking stale copies until their complete tail.
+            // Legacy sampled/hybrid packages retain their existing overlap.
+            if self.kit.voices[definition]
+                .manifest
+                .advanced_model
+                .is_some()
+            {
+                for voice in &mut self.voices {
+                    if voice.active && voice.definition == definition {
+                        *voice = ActiveVoice::default();
+                    }
+                }
+            }
             if let Some(group) = self.kit.voices[definition].manifest.choke_group {
                 self.choke(group);
             }
@@ -209,7 +246,7 @@ impl DrumEngine {
                         .max_by_key(|(_, voice)| voice.age)
                         .map_or(0, |(index, _)| index)
                 });
-            self.voices[slot] = ActiveVoice {
+            let mut voice = ActiveVoice {
                 active: true,
                 definition,
                 sample,
@@ -217,13 +254,26 @@ impl DrumEngine {
                 sample_increment,
                 age: 0,
                 released: false,
+                choked: false,
                 envelope: 0.0,
                 phase: 0.0,
                 noise_state: 0x9e37_79b9 ^ u32::from(note) ^ sequence.rotate_left(13),
                 velocity_gain: (f32::from(velocity) / 127.0).powf(1.35)
                     * sample_gain
                     * db_to_gain(prepared.manifest.gain_db),
+                velocity_character: f32::from(velocity) / 127.0,
+                model_state: ModelState::default(),
             };
+            if let Some(model) = &prepared.manifest.advanced_model {
+                voice.model_state.reset(
+                    0xa511_e9b3
+                        ^ u32::from(note).rotate_left(7)
+                        ^ sequence.rotate_left(17)
+                        ^ definition as u32,
+                    model,
+                );
+            }
+            self.voices[slot] = voice;
         }
     }
 
@@ -239,7 +289,13 @@ impl DrumEngine {
         for voice in &mut self.voices {
             if voice.active && self.kit.voices[voice.definition].manifest.choke_group == Some(group)
             {
-                *voice = ActiveVoice::default();
+                let release = self.kit.voices[voice.definition].manifest.choke_release_ms;
+                if release <= 0.0 {
+                    *voice = ActiveVoice::default();
+                } else {
+                    voice.released = true;
+                    voice.choked = true;
+                }
             }
         }
     }
@@ -251,7 +307,13 @@ impl DrumEngine {
         }
         let prepared = &self.kit.voices[voice.definition];
         let manifest = &prepared.manifest;
-        let envelope = envelope_value(voice, manifest.envelope, self.sample_rate, self.maximum_age);
+        let envelope = envelope_value(
+            voice,
+            manifest.envelope,
+            manifest.choke_release_ms,
+            self.sample_rate,
+            self.maximum_age,
+        );
         if !voice.active {
             return StereoFrame::SILENCE;
         }
@@ -288,6 +350,26 @@ impl DrumEngine {
                     + metallic * model.metallic_amount * body_decay;
                 left += modeled;
                 right += modeled;
+            }
+            if let Some(model) = &manifest.advanced_model {
+                let rendered = model::render(
+                    model,
+                    &mut voice.model_state,
+                    voice.age,
+                    self.sample_rate,
+                    voice.velocity_character,
+                    prepared.tuning_cents,
+                );
+                left += rendered.left;
+                right += rendered.right;
+                self.diagnostics.intentional_internal_peak = self
+                    .diagnostics
+                    .intentional_internal_peak
+                    .max(rendered.internal_peak);
+                self.diagnostics.intentional_clip_events = self
+                    .diagnostics
+                    .intentional_clip_events
+                    .saturating_add(u64::from(rendered.intentional_clip_events));
             }
         }
         voice.age = voice.age.saturating_add(1);
@@ -352,9 +434,18 @@ impl DrumEngine {
         }
         let makeup = db_to_gain(settings.output_gain_db);
         let ceiling = db_to_gain(settings.ceiling_dbfs);
+        let pre_safety_left = finite(left * makeup);
+        let pre_safety_right = finite(right * makeup);
+        let pre_safety_peak = pre_safety_left.abs().max(pre_safety_right.abs());
+        self.diagnostics.bus_pre_safety_peak =
+            self.diagnostics.bus_pre_safety_peak.max(pre_safety_peak);
+        if pre_safety_peak > ceiling {
+            self.diagnostics.safety_ceiling_events =
+                self.diagnostics.safety_ceiling_events.saturating_add(1);
+        }
         StereoFrame {
-            left: protect(left * makeup, ceiling),
-            right: protect(right * makeup, ceiling),
+            left: protect(pre_safety_left, ceiling),
+            right: protect(pre_safety_right, ceiling),
         }
     }
 }
@@ -362,6 +453,7 @@ impl DrumEngine {
 fn envelope_value(
     voice: &mut ActiveVoice,
     envelope: crate::schema::Envelope,
+    choke_release_ms: f32,
     sample_rate: u32,
     maximum_age: u64,
 ) -> f32 {
@@ -375,7 +467,12 @@ fn envelope_value(
     let decay = (envelope.decay_ms * frames_per_ms).max(1.0);
     let in_attack = (voice.age as f32) < attack;
     if voice.released {
-        let release = (envelope.release_ms * frames_per_ms).max(1.0);
+        let release_ms = if voice.choked {
+            choke_release_ms
+        } else {
+            envelope.release_ms
+        };
+        let release = (release_ms * frames_per_ms).max(1.0);
         voice.envelope *= (-6.907_755 / release).exp();
     } else if in_attack {
         voice.envelope = (voice.age as f32 + 1.0) / attack;
@@ -480,6 +577,7 @@ mod tests {
             family: "kick".into(),
             kind: VoiceKind::Modeled,
             choke_group: None,
+            choke_release_ms: 0.0,
             gain_db: -8.0,
             pan: 0.0,
             envelope: Envelope {
@@ -503,6 +601,7 @@ mod tests {
                 noise_decay_ms: 15.0,
                 metallic_amount: 0.0,
             }),
+            advanced_model: None,
         };
         PreparedKit {
             manifest: KitManifest {
@@ -548,14 +647,105 @@ mod tests {
         }
     }
 
-    fn render(chunk: usize) -> Vec<StereoFrame> {
+    fn advanced_model() -> AdvancedModel {
+        let dry = DriveStage::default();
+        AdvancedModel {
+            algorithm: ModelAlgorithm::Kick,
+            oscillator: OscillatorShape::Shaped,
+            base_hz: 52.0,
+            pitch: PitchEnvelope {
+                start_cents: 2_200.0,
+                mid_cents: 650.0,
+                attack_ms: 2.0,
+                decay_ms: 70.0,
+            },
+            body: BodyLayer {
+                level: 1.0,
+                decay_ms: 420.0,
+                pulse_width: 0.48,
+                shape: 0.6,
+                overtone_level: 0.22,
+                overtone_ratio: 2.0,
+                drive: DriveStage {
+                    pre_gain_db: 10.0,
+                    amount: 0.5,
+                    curve: DriveCurve::Cubic,
+                    post_gain_db: -2.0,
+                },
+            },
+            click: ClickLayer {
+                level: 0.5,
+                decay_ms: 5.0,
+                tone_hz: 4_000.0,
+                noise_mix: 0.55,
+                high_pass_hz: 1_200.0,
+                drive: dry,
+            },
+            noise: NoiseLayer {
+                level: 0.05,
+                attack_ms: 0.0,
+                decay_ms: 40.0,
+                tail_level: 0.0,
+                tail_decay_ms: 100.0,
+                filter: FilterMode::HighPass,
+                cutoff_hz: 3_500.0,
+                resonance: 0.2,
+                colour: -0.2,
+                drive: dry,
+            },
+            modes: Vec::new(),
+            bursts: Vec::new(),
+            modulation: Modulation {
+                fm_ratio: 2.1,
+                fm_index: 0.8,
+                phase_amount: 0.2,
+                ring_ratio: 2.7,
+                ring_amount: 0.12,
+                feedback: 0.18,
+            },
+            master_drive: DriveStage {
+                pre_gain_db: 8.0,
+                amount: 0.4,
+                curve: DriveCurve::SoftClip,
+                post_gain_db: -1.0,
+            },
+            stereo: StereoModel {
+                width: 0.25,
+                micro_delay_ms: 0.2,
+            },
+            velocity: VelocityResponse {
+                click: 0.8,
+                noise: 0.7,
+                drive: 0.8,
+                decay: 0.4,
+                brightness: 0.8,
+                pitch: 0.4,
+            },
+            variation: SeededVariation {
+                pitch_cents: 8.0,
+                timing_ms: 0.0,
+                level: 0.04,
+                stereo: 0.2,
+            },
+        }
+    }
+
+    fn advanced_kit() -> PreparedKit {
+        let mut kit = modeled_kit();
+        let model = advanced_model();
+        kit.manifest.engine.minimum = "0.2.0".into();
+        kit.manifest.voices[0].modeled = None;
+        kit.manifest.voices[0].advanced_model = Some(model.clone());
+        kit.voices[0].manifest.modeled = None;
+        kit.voices[0].manifest.advanced_model = Some(model);
+        kit
+    }
+
+    fn render_at(velocity: u8, chunk: usize) -> Vec<StereoFrame> {
         let (sender, receiver) = event_queue();
-        let mut engine = DrumEngine::new(48_000, modeled_kit(), receiver).unwrap();
+        let mut engine = DrumEngine::new(48_000, advanced_kit(), receiver).unwrap();
         sender
-            .push(DrumEvent::NoteOn {
-                note: 36,
-                velocity: 100,
-            })
+            .push(DrumEvent::NoteOn { note: 36, velocity })
             .unwrap();
         let mut output = vec![StereoFrame::SILENCE; 4_096];
         for block in output.chunks_mut(chunk) {
@@ -566,8 +756,8 @@ mod tests {
 
     #[test]
     fn modeled_render_is_deterministic_finite_and_chunk_invariant() {
-        let small = render(64);
-        let odd = render(127);
+        let small = render_at(100, 64);
+        let odd = render_at(100, 127);
         assert_eq!(small, odd);
         assert!(small.iter().any(|frame| frame.left.abs() > 0.0001));
         assert!(small.iter().all(|frame| {
@@ -582,7 +772,7 @@ mod tests {
     fn bus_processing_preserves_useful_velocity_dynamics() {
         let peak_at = |velocity| {
             let (sender, receiver) = event_queue();
-            let mut engine = DrumEngine::new(48_000, modeled_kit(), receiver).unwrap();
+            let mut engine = DrumEngine::new(48_000, advanced_kit(), receiver).unwrap();
             sender
                 .push(DrumEvent::NoteOn { note: 36, velocity })
                 .unwrap();
@@ -597,6 +787,53 @@ mod tests {
         let loud = peak_at(120);
         assert!(quiet > 0.0);
         assert!(loud > quiet * 2.5, "quiet {quiet}, loud {loud}");
+    }
+
+    #[test]
+    fn advanced_velocity_changes_timbre_not_only_gain() {
+        let quiet = render_at(32, 128);
+        let loud = render_at(127, 128);
+        let quiet_peak = quiet
+            .iter()
+            .map(|frame| frame.left.abs())
+            .fold(0.0_f32, f32::max);
+        let loud_peak = loud
+            .iter()
+            .map(|frame| frame.left.abs())
+            .fold(0.0_f32, f32::max);
+        let scale = loud_peak / quiet_peak.max(0.000_001);
+        let difference = quiet
+            .iter()
+            .zip(&loud)
+            .take(2_048)
+            .map(|(quiet, loud)| (loud.left - quiet.left * scale).abs())
+            .sum::<f32>();
+        assert!(
+            difference > 2.0,
+            "velocity render was too close to scalar gain: {difference}"
+        );
+    }
+
+    #[test]
+    fn advanced_voice_retrigger_replaces_its_prior_instance() {
+        let (sender, receiver) = event_queue();
+        let mut engine = DrumEngine::new(48_000, advanced_kit(), receiver).unwrap();
+        sender
+            .push(DrumEvent::NoteOn {
+                note: 36,
+                velocity: 80,
+            })
+            .unwrap();
+        engine.process(&mut [StereoFrame::SILENCE; 128]);
+        assert_eq!(engine.active_voice_count(), 1);
+        sender
+            .push(DrumEvent::NoteOn {
+                note: 36,
+                velocity: 127,
+            })
+            .unwrap();
+        engine.process(&mut [StereoFrame::SILENCE; 1]);
+        assert_eq!(engine.active_voice_count(), 1);
     }
 
     #[test]
@@ -653,7 +890,7 @@ mod tests {
     #[test]
     fn render_callback_path_does_not_allocate() {
         let (sender, receiver) = event_queue();
-        let mut engine = DrumEngine::new(48_000, modeled_kit(), receiver).unwrap();
+        let mut engine = DrumEngine::new(48_000, advanced_kit(), receiver).unwrap();
         let mut output = [StereoFrame::SILENCE; 256];
         sender
             .push(DrumEvent::NoteOn {
@@ -663,5 +900,78 @@ mod tests {
             .unwrap();
         assert_no_allocations(|| engine.process(&mut output));
         assert!(output.iter().any(|frame| frame.left != 0.0));
+    }
+
+    #[test]
+    fn advanced_voice_ends_at_the_strict_kit_tail() {
+        let (sender, receiver) = event_queue();
+        let mut engine = DrumEngine::new(48_000, advanced_kit(), receiver).unwrap();
+        sender
+            .push(DrumEvent::NoteOn {
+                note: 36,
+                velocity: 127,
+            })
+            .unwrap();
+        let mut output = [StereoFrame::SILENCE; 128];
+        for _ in 0..=750 {
+            engine.process(&mut output);
+            assert!(output.iter().all(|frame| {
+                frame.left.is_finite()
+                    && frame.right.is_finite()
+                    && frame.left.abs() <= 10.0_f32.powf(-1.0 / 20.0)
+                    && frame.right.abs() <= 10.0_f32.powf(-1.0 / 20.0)
+            }));
+        }
+        assert_eq!(engine.active_voice_count(), 0);
+        assert!(engine.diagnostics().intentional_clip_events > 0);
+    }
+
+    #[test]
+    fn closed_hat_uses_bounded_release_to_choke_open_hat() {
+        let mut kit = advanced_kit();
+        let mut open_manifest = kit.manifest.voices[0].clone();
+        open_manifest.id = "open-hat".into();
+        open_manifest.display_name = "Open Hat".into();
+        open_manifest.trigger_note = 46;
+        open_manifest.articulation = "open".into();
+        open_manifest.family = "hat".into();
+        open_manifest.choke_group = Some(1);
+        open_manifest.choke_release_ms = 8.0;
+        open_manifest.envelope.decay_ms = 1_500.0;
+        let mut closed_manifest = open_manifest.clone();
+        closed_manifest.id = "closed-hat".into();
+        closed_manifest.display_name = "Closed Hat".into();
+        closed_manifest.trigger_note = 42;
+        closed_manifest.articulation = "closed".into();
+        closed_manifest.envelope.decay_ms = 120.0;
+        let mut open_prepared = kit.voices[0].clone();
+        open_prepared.manifest = open_manifest.clone();
+        let mut closed_prepared = open_prepared.clone();
+        closed_prepared.manifest = closed_manifest.clone();
+        kit.manifest.voices = vec![open_manifest, closed_manifest];
+        kit.voices = vec![open_prepared, closed_prepared].into_boxed_slice();
+
+        let (sender, receiver) = event_queue();
+        let mut engine = DrumEngine::new(48_000, kit, receiver).unwrap();
+        sender
+            .push(DrumEvent::NoteOn {
+                note: 46,
+                velocity: 100,
+            })
+            .unwrap();
+        engine.process(&mut [StereoFrame::SILENCE; 128]);
+        assert_eq!(engine.active_voice_count(), 1);
+        sender
+            .push(DrumEvent::NoteOn {
+                note: 42,
+                velocity: 100,
+            })
+            .unwrap();
+        engine.process(&mut [StereoFrame::SILENCE; 1]);
+        assert_eq!(engine.active_voice_count(), 2);
+        for _ in 0..8 {
+            engine.process(&mut [StereoFrame::SILENCE; 128]);
+        }
+        assert_eq!(engine.active_voice_count(), 1);
     }
 }
