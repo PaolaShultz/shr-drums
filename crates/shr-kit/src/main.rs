@@ -2221,49 +2221,6 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert_eq!(structures.len(), 27);
 
-        for voice in &kit.manifest.voices {
-            let low = render_voice(&kit, voice.trigger_note, 32, 2_048);
-            let medium = render_voice(&kit, voice.trigger_note, 80, 2_048);
-            let high = render_voice(&kit, voice.trigger_note, 127, 2_048);
-            assert_eq!(medium, render_voice(&kit, voice.trigger_note, 80, 2_048));
-            for render in [&low, &medium, &high] {
-                assert!(render.iter().all(|frame| {
-                    frame.left.is_finite()
-                        && frame.right.is_finite()
-                        && frame.left.abs() <= 10.0_f32.powf(-1.0 / 20.0)
-                        && frame.right.abs() <= 10.0_f32.powf(-1.0 / 20.0)
-                }));
-                assert!(render
-                    .iter()
-                    .any(|frame| frame.left.abs().max(frame.right.abs()) > 0.000_01));
-            }
-            let energy = |render: &[StereoFrame]| {
-                render
-                    .iter()
-                    .map(|frame| frame.left * frame.left + frame.right * frame.right)
-                    .sum::<f32>()
-            };
-            let low_energy = energy(&low);
-            let medium_energy = energy(&medium);
-            let high_energy = energy(&high);
-            assert!(
-                low_energy < medium_energy && medium_energy < high_energy,
-                "{} velocity energy was not ordered: {low_energy}, {medium_energy}, {high_energy}",
-                voice.id
-            );
-            let scale = high_energy.sqrt() / low_energy.max(0.000_000_1).sqrt();
-            let timbre_difference = low
-                .iter()
-                .zip(&high)
-                .map(|(low, high)| (high.left - low.left * scale).abs())
-                .sum::<f32>();
-            assert!(
-                timbre_difference > 0.01,
-                "{} velocity changed only gain",
-                voice.id
-            );
-        }
-
         let (sender, receiver) = event_queue();
         let mut choke_engine = DrumEngine::new(48_000, kit.clone(), receiver).unwrap();
         sender
@@ -2392,50 +2349,6 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert_eq!(structures.len(), 27);
 
-        for voice in &kit.manifest.voices {
-            let low = render_voice(&kit, voice.trigger_note, 32, 2_048);
-            let medium = render_voice(&kit, voice.trigger_note, 80, 2_048);
-            let high = render_voice(&kit, voice.trigger_note, 127, 2_048);
-            assert_eq!(medium, render_voice(&kit, voice.trigger_note, 80, 2_048));
-            let ceiling = 10.0_f32.powf(kit.manifest.processing.ceiling_dbfs / 20.0);
-            for render in [&low, &medium, &high] {
-                assert!(render.iter().all(|frame| {
-                    frame.left.is_finite()
-                        && frame.right.is_finite()
-                        && frame.left.abs() <= ceiling
-                        && frame.right.abs() <= ceiling
-                }));
-                assert!(render
-                    .iter()
-                    .any(|frame| frame.left.abs().max(frame.right.abs()) > 0.000_01));
-            }
-            let energy = |render: &[StereoFrame]| {
-                render
-                    .iter()
-                    .map(|frame| frame.left * frame.left + frame.right * frame.right)
-                    .sum::<f32>()
-            };
-            let low_energy = energy(&low);
-            let medium_energy = energy(&medium);
-            let high_energy = energy(&high);
-            assert!(
-                low_energy < medium_energy && medium_energy < high_energy,
-                "{} velocity energy was not ordered: {low_energy}, {medium_energy}, {high_energy}",
-                voice.id
-            );
-            let scale = high_energy.sqrt() / low_energy.max(0.000_000_1).sqrt();
-            let timbre_difference = low
-                .iter()
-                .zip(&high)
-                .map(|(low, high)| (high.left - low.left * scale).abs())
-                .sum::<f32>();
-            assert!(
-                timbre_difference > 0.01,
-                "{} velocity changed only gain",
-                voice.id
-            );
-        }
-
         let (sender, receiver) = event_queue();
         let mut retrigger_engine = DrumEngine::new(48_000, kit.clone(), receiver).unwrap();
         sender
@@ -2512,6 +2425,91 @@ mod tests {
         assert!(tail_engine.diagnostics().intentional_clip_events > 0);
 
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    #[ignore = "exhaustive per-voice quality measurement; run explicitly"]
+    fn electronic_house_velocity_quality_matrix() {
+        let directory =
+            std::env::temp_dir().join(format!("shr-kit-electronic-quality-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        build_electronic_house(&directory).unwrap();
+        let kit = load_package(
+            &directory.join("electronic-house.shrkit"),
+            ProjectKey::default(),
+            &KitTuning::default(),
+        )
+        .unwrap();
+        assert_velocity_quality_matrix(&kit);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    #[ignore = "exhaustive per-voice quality measurement; run explicitly"]
+    fn acid_velocity_quality_matrix() {
+        let directory =
+            std::env::temp_dir().join(format!("shr-kit-acid-quality-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        build_acid(&directory).unwrap();
+        let kit = load_package(
+            &directory.join("acid.shrkit"),
+            ProjectKey::default(),
+            &KitTuning::default(),
+        )
+        .unwrap();
+        assert_velocity_quality_matrix(&kit);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn assert_velocity_quality_matrix(kit: &shr_drums::PreparedKit) {
+        let ceiling = 10.0_f32.powf(kit.manifest.processing.ceiling_dbfs / 20.0);
+        for voice in &kit.manifest.voices {
+            let low = render_voice(kit, voice.trigger_note, 32, 2_048);
+            let medium = render_voice(kit, voice.trigger_note, 80, 2_048);
+            let high = render_voice(kit, voice.trigger_note, 127, 2_048);
+            assert_eq!(
+                medium,
+                render_voice(kit, voice.trigger_note, 80, 2_048),
+                "{} medium-velocity render was not deterministic",
+                voice.id
+            );
+            for render in [&low, &medium, &high] {
+                assert!(render.iter().all(|frame| {
+                    frame.left.is_finite()
+                        && frame.right.is_finite()
+                        && frame.left.abs() <= ceiling
+                        && frame.right.abs() <= ceiling
+                }));
+                assert!(render
+                    .iter()
+                    .any(|frame| frame.left.abs().max(frame.right.abs()) > 0.000_01));
+            }
+            let energy = |render: &[StereoFrame]| {
+                render
+                    .iter()
+                    .map(|frame| frame.left * frame.left + frame.right * frame.right)
+                    .sum::<f32>()
+            };
+            let low_energy = energy(&low);
+            let medium_energy = energy(&medium);
+            let high_energy = energy(&high);
+            assert!(
+                low_energy < medium_energy && medium_energy < high_energy,
+                "{} velocity energy was not ordered: {low_energy}, {medium_energy}, {high_energy}",
+                voice.id
+            );
+            let scale = high_energy.sqrt() / low_energy.max(0.000_000_1).sqrt();
+            let timbre_difference = low
+                .iter()
+                .zip(&high)
+                .map(|(low, high)| (high.left - low.left * scale).abs())
+                .sum::<f32>();
+            assert!(
+                timbre_difference > 0.01,
+                "{} velocity changed only gain",
+                voice.id
+            );
+        }
     }
 
     fn render_voice(

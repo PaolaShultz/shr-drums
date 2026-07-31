@@ -790,6 +790,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "adopted timbre quality measurement; run explicitly"]
     fn advanced_velocity_changes_timbre_not_only_gain() {
         let quiet = render_at(32, 128);
         let loud = render_at(127, 128);

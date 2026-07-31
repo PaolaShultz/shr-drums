@@ -27,4 +27,9 @@ Ambience and tempo delay are separate Project effects in SHR-DAW; the library
 bus provides only bounded filtering, transient/body shaping, parallel
 compression, saturation, gain, and output protection.
 
+Normal workspace tests keep the adopted schema, safety, callback, and runtime
+contracts. Numeric timbre-quality checks, exhaustive per-voice
+velocity/character matrices, and private review renders are opt-in and do not
+execute during ordinary `cargo test`.
+
 See [the package contract](FORMAT.md) and [sample provenance](SOURCES.md).
