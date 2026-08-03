@@ -406,11 +406,9 @@ fn write_measurements(output: &Path, measurements: &[Measurement]) -> Result<()>
 }
 
 fn write_voice_structures(output: &Path, kit: &PreparedKit) -> Result<()> {
-    let mut report = String::from(
-        format!(
-            "# {} voice structures\n\nAll sounds are real-time SHR Drums models. No voice has a sample assignment.\n\n",
-            kit.manifest.display_name
-        ),
+    let mut report = format!(
+        "# {} voice structures\n\nAll sounds are real-time SHR Drums models. No voice has a sample assignment.\n\n",
+        kit.manifest.display_name
     );
     for voice in &kit.manifest.voices {
         let model = voice

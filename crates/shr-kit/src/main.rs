@@ -14,6 +14,17 @@ use std::path::Path;
 
 mod review;
 
+type ImportedPiece<'a> = (
+    &'a str,
+    &'a str,
+    u8,
+    f32,
+    &'a str,
+    Option<u8>,
+    bool,
+    [&'a str; 6],
+);
+
 fn main() -> Result<()> {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
     match arguments.as_slice() {
@@ -172,7 +183,7 @@ fn build_muldjord_kit(source: &Path, output: &Path, family: Family) -> Result<()
             source.join("README.txt"),
             directory.join("SOURCE-README.txt"),
         )?;
-        let pieces: [(&str, &str, u8, f32, &str, Option<u8>, bool, [&str; 6]); 9] = [
+        let pieces: [ImportedPiece<'_>; 9] = [
             (
                 "kick",
                 "Kick",
@@ -2045,8 +2056,14 @@ fn analyze_pitch(path: &Path) -> Result<()> {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
     let digest = Sha256::digest(bytes);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
 }
 
 fn pretty_manifest(manifest: &KitManifest) -> Result<Vec<u8>> {
