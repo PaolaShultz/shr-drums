@@ -22,6 +22,14 @@ Project storage, kit selection, and cleanup. SHR-DAW also owns drum ambience
 and tempo delay. The kit bus is limited to filtering, transient and body
 shaping, parallel compression, saturation, gain, and output protection.
 
+SHR-DAW pins an exact SHR Drums Git revision in its `Cargo.toml` and compiles
+the library into `shr`; it never starts a separate drum service. SHR-DAW also
+owns the cleared compiled-kit allowlist, installation paths, Pattern routes,
+and failure isolation around this library. This repository owns format 1,
+engine bounds, recipe/build tools, and source provenance. A kit shipped by
+SHR-DAW is governed by SHR-DAW's allowlist and its package manifest, not merely
+by the set of recipe commands listed below.
+
 Electronic House and Acid are fully modeled 27-voice kits with no sample
 assignments. Big Rock and Experimental Noise are replaceable acoustic
 foundations. Their factory versions use generated attacks; the Muldjord
