@@ -15,4 +15,4 @@ anyhow.workspace = true
 hound.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-shr-drums = { path = "../shr-drums", version = "=0.2.0" }
+shr-drums = { path = "../shr-drums", version = "=0.2.1" }
