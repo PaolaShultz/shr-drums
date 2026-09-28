@@ -1,14 +1,41 @@
+![SHR Drums — four rows of rhythm steps](docs/assets/banner.svg)
+
 # SHR Drums
 
-SHR Drums is the in-process drum engine used by
-[SHR-DAW](https://github.com/PaolaShultz/shr-daw). It also provides the
-offline `shr-kit` package builder and validator.
+**A drum engine and kit-building toolkit.** Combine modeled voices and samples
+in portable `.shrkit` packages, then play them through
+[SHR-DAW](https://github.com/PaolaShultz/shr-daw). The `shr-kit` CLI builds,
+imports and validates kits offline.
 
-The repository source, documentation, and tracked recipes are released under
-the [MIT licence](LICENSE). Each compiled kit has its own content licence and
-provenance in `manifest.json`. The generated modeled recipes declare CC0-1.0;
-imported sample packages keep their source licence. See
-[Sample source provenance](SOURCES.md) before distributing a kit.
+[Quick start](#quick-start) · [Kit format](FORMAT.md) · [Source provenance](SOURCES.md) · [CLI reference](#shr-kit-command-reference)
+
+| Kit direction | What is here |
+| --- | --- |
+| Electronic House | A fully modeled 27-voice recipe |
+| Acid | A fully modeled 27-voice recipe |
+| Big Rock | An acoustic foundation with generated attacks or imported samples |
+| Experimental Noise | A second acoustic foundation for further shaping |
+
+SHR-DAW owns its shipped kit catalog and may extend these recipes. This repo
+owns the engine, package format and build tools.
+
+## Quick start
+
+Use Rust 1.85 or newer; integrated SHR-DAW builds use its pinned toolchain.
+
+```sh
+cargo build --locked -p shr-kit
+cargo run --locked -p shr-kit -- electronic-house user/kits
+cargo run --locked -p shr-kit -- validate user/kits/electronic-house.shrkit
+```
+
+The builder creates a new package and refuses to overwrite an existing one.
+These commands do not open audio hardware or play sound.
+
+## Engine and tool reference
+
+<details>
+<summary>Host integration, development checks and the complete shr-kit command reference</summary>
 
 ## Engine and host boundary
 
@@ -84,3 +111,9 @@ There is no separate successful `--help` path.
 
 The package fields, bounds, enums, and compatibility rules are in
 [`.shrkit` format 1](FORMAT.md).
+
+</details>
+
+Source and recipes: [MIT](LICENSE). Each compiled kit keeps its own content
+license and provenance in `manifest.json`; modeled recipes declare CC0-1.0.
+Read [SOURCES.md](SOURCES.md) before distributing imported samples.
