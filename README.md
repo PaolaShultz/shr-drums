@@ -117,3 +117,9 @@ The package fields, bounds, enums, and compatibility rules are in
 Source and recipes: [MIT](LICENSE). Each compiled kit keeps its own content
 license and provenance in `manifest.json`; modeled recipes declare CC0-1.0.
 Read [SOURCES.md](SOURCES.md) before distributing imported samples.
+
+## GigPies integration planning — 2026-10-04
+
+[Owning GigPies plan](docs/plans/GIGPIES_IMPLEMENTATION.md) records scoped tasks, contract dependencies,
+validation and launch instructions. This is planned work; existing implementation
+and hardware status above are unchanged.
