@@ -9,6 +9,10 @@ imports and validates kits offline.
 
 [Quick start](#quick-start) · [Kit format](FORMAT.md) · [Source provenance](SOURCES.md) · [CLI reference](#shr-kit-command-reference)
 
+[**Power Studio sample pack**](packs/POWER_STUDIO.md): 30 voices, three crashes,
+two rides and bells, china, splash, additional articulations, and processed
+acoustic drums. Public download includes complete credits and source licences.
+
 | Kit direction | What is here |
 | --- | --- |
 | Electronic House | A fully modeled 27-voice recipe |
@@ -17,7 +21,7 @@ imports and validates kits offline.
 | Experimental Noise | A second acoustic foundation for further shaping |
 
 SHR-DAW owns its shipped kit catalog and may extend these recipes. This repo
-owns the engine, package format and build tools.
+owns the engine, package format, build tools and the Power Studio pack release.
 
 ## Quick start
 
@@ -100,10 +104,11 @@ cargo run --locked -p shr-kit -- COMMAND [ARGUMENTS]
 | `review-electronic-house <kit.shrkit> <output-directory>` | Requires a fully modeled Electronic House package with the expected kit ID, at least 24 voices, an advanced model on every voice, and no samples. It refuses an existing output path. It creates offline review WAVs plus `measurements.tsv`, `VOICE_STRUCTURES.md`, and `REPORT.md`. A later error can leave partial new output. |
 | `review-acid <kit.shrkit> <output-directory>` | Applies the same review rules to the Acid kit and creates the same kinds of review WAVs and reports. It refuses an existing output path; a later error can leave partial new output. |
 | `import-muldjord <extracted-source> <output-directory>` | Requires the extracted `LICENSE.txt`, `README.txt`, `MuldjordKit 20201018.sfz`, and `samples/` paths. It creates `big-rock-muldjord.shrkit` and `experimental-noise-muldjord.shrkit`, including copied source notices and selected WAVs. Each package refuses replacement when reached and removes its own partial directory after a build failure. If the second package fails or exists, the first may remain. Verify the source archive against [SOURCES.md](SOURCES.md) before running it. |
+| `review-power-studio <kit.shrkit> <output-directory>` | Checks the complete 30-voice sampled pack, finite bounded output, rising velocity energy and deterministic repeat renders; writes voice WAVs, a phrase and measurements offline. Refuses existing output. |
 | `analyze-pitch <sample.wav>` | Reads up to four seconds from a mono or stereo WAV, skips the first 80 ms, scans 20 through 1000 Hz, and prints a dominant body-pitch candidate with relative power. It refuses unsuitable channels, short input, decode errors, or an unstable result. It writes nothing, and the printed value still needs review before use in a manifest. |
 
-Only `review-electronic-house` and `review-acid` create audition and comparison
-WAV sets. `factory` and `import-muldjord` may create sample WAVs inside kit
+`review-electronic-house`, `review-acid`, and `review-power-studio` create offline
+audition and measurement WAV sets. `factory` and `import-muldjord` may create sample WAVs inside kit
 packages, but those files are package assets rather than review renders.
 
 Invalid command shapes print the complete usage list and exit with status 2.

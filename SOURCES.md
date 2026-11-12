@@ -2,7 +2,9 @@
 
 This file owns provenance for sample-backed SHR Drums packages. Large
 archives, extracted sources, compiled `.shrkit` directories, and review output
-belong below ignored `user/`. They are not part of this repository.
+belong below ignored `user/`. They are not tracked source files. The explicitly
+cleared Power Studio package is also published as a GitHub release attachment;
+its recipe, notices and per-file hashes are tracked here.
 
 ## MuldjordKit 2020-10-18
 
@@ -50,3 +52,21 @@ accessory percussion:
 
 VCSL is not used by the current importer, recipes, or packages. No VCSL file or
 derived asset is distributed by this repository.
+
+## Power Studio 1.0
+
+The [Power Studio recipe](packs/power-studio.recipe.json) locks every selected
+Muldjord and Virtuosity source by SHA-256. The builder verifies these before
+writing any package. Source identities, modifications, attribution and the
+per-file CC BY 4.0 / CC0 distinction are in
+[the distributed credits](packs/power-studio/CREDITS.md). This includes original
+CC0 synthesized percussion; it does not relabel Muldjord audio as CC0.
+
+Virtuosity Drums is by Versilian Studios and Karoryfer Samples, performed by
+Austin McMahon at Virtuosity Musical Instruments in Boston. The selected
+recordings are pinned to `9f04cf9a734527edfbb0a4eee1f674e45bbf71bc` from
+https://github.com/sfzinstruments/virtuosity_drums under CC0 1.0. Its complete
+LICENSE and README are hash-locked and copied into the package. Only the
+specified overhead drum/cymbal files are used, not its auxiliary-percussion bank.
+
+[Build, validation and public pack](packs/POWER_STUDIO.md).

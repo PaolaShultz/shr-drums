@@ -39,3 +39,8 @@ jobs:
       - name: Normal offline tests
         run: |
           cargo +1.97.1 test --locked --all-targets --workspace -- --test-threads=1
+      - name: Power Studio builder contracts
+        run: |
+          python3 -m venv /tmp/shr-power-tools
+          /tmp/shr-power-tools/bin/pip install -r scripts/power-studio-requirements.txt
+          /tmp/shr-power-tools/bin/python -m unittest discover -s scripts -p 'test_*.py'

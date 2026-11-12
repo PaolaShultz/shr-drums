@@ -49,13 +49,16 @@ fn main() -> Result<()> {
             "acid",
             &["rave-kick", "industrial-snare"],
         ),
+        [command, kit, output] if command == "review-power-studio" => {
+            review::render_power_studio(Path::new(kit), Path::new(output))
+        }
         [command, source, output] if command == "import-muldjord" => {
             import_muldjord(Path::new(source), Path::new(output))
         }
         [command, wav] if command == "analyze-pitch" => analyze_pitch(Path::new(wav)),
         _ => {
             eprintln!(
-                "usage:\n  shr-kit validate <manifest.json|kit.shrkit>\n  shr-kit compile <manifest.json> <output.shrkit>\n  shr-kit factory <output-directory>\n  shr-kit electronic-house <output-directory>\n  shr-kit acid <output-directory>\n  shr-kit review-electronic-house <kit.shrkit> <output-directory>\n  shr-kit review-acid <kit.shrkit> <output-directory>\n  shr-kit import-muldjord <extracted-source> <output-directory>\n  shr-kit analyze-pitch <sample.wav>"
+                "usage:\n  shr-kit validate <manifest.json|kit.shrkit>\n  shr-kit compile <manifest.json> <output.shrkit>\n  shr-kit factory <output-directory>\n  shr-kit electronic-house <output-directory>\n  shr-kit acid <output-directory>\n  shr-kit review-electronic-house <kit.shrkit> <output-directory>\n  shr-kit review-acid <kit.shrkit> <output-directory>\n  shr-kit import-muldjord <extracted-source> <output-directory>\n  shr-kit review-power-studio <kit.shrkit> <output-directory>\n  shr-kit analyze-pitch <sample.wav>"
             );
             std::process::exit(2);
         }

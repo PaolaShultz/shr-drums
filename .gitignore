@@ -1,2 +1,6 @@
 /target/
 /user/
+
+# Offline pack builder bytecode
+__pycache__/
+*.py[cod]

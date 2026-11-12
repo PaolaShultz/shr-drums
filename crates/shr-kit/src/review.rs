@@ -140,6 +140,111 @@ pub(crate) fn render_review(
     Ok(())
 }
 
+/// Offline production-engine acceptance for the sampled pack; never opens audio.
+pub(crate) fn render_power_studio(kit_directory: &Path, output: &Path) -> Result<()> {
+    if output.exists() {
+        bail!("refusing to replace existing review {}", output.display());
+    }
+    let kit = load_package(kit_directory, ProjectKey::default(), &KitTuning::default())
+        .map_err(anyhow::Error::msg)?;
+    let expected = [
+        35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+        59, 60, 61, 62, 63, 64, 65,
+    ];
+    let notes = kit
+        .manifest
+        .voices
+        .iter()
+        .map(|v| v.trigger_note)
+        .collect::<Vec<_>>();
+    if kit.manifest.kit_id != "power-studio" || notes != expected {
+        bail!("review requires the complete Power Studio note map");
+    }
+    fs::create_dir_all(output.join("voices"))?;
+    let mut measurements = Vec::new();
+    for voice in &kit.manifest.voices {
+        let mut previous_rms = 0.0;
+        for velocity in VELOCITIES {
+            // Two hits exercise both RR choices where present, with the natural tail.
+            let duration = voice_duration_seconds(voice, kit.manifest.max_tail_seconds);
+            let events = [
+                (0, voice.trigger_note, velocity),
+                (
+                    (duration * SAMPLE_RATE as f32) as usize,
+                    voice.trigger_note,
+                    velocity,
+                ),
+            ];
+            let (frames, diagnostics) = render_events(&kit, &events, duration * 2.0)?;
+            let (repeat, _) = render_events(&kit, &events, duration * 2.0)?;
+            if frames != repeat
+                || frames
+                    .iter()
+                    .any(|s| !s.left.is_finite() || !s.right.is_finite())
+            {
+                bail!("non-deterministic/nonfinite voice {}", voice.id);
+            }
+            let relative = format!("voices/{}-v{velocity}.wav", voice.id);
+            let measured = measure(
+                relative.clone(),
+                voice.id.clone(),
+                velocity,
+                &frames,
+                diagnostics,
+            );
+            if measured.rms <= previous_rms || measured.peak <= 0.00001 || measured.peak > 0.842 {
+                bail!("voice {} fails velocity/finite ceiling check at {velocity}: rms {} previous {} peak {}", voice.id, measured.rms, previous_rms, measured.peak);
+            }
+            previous_rms = measured.rms;
+            write_wav(&output.join(relative), &frames)?;
+            measurements.push(measured);
+        }
+    }
+    // A four-bar phrase exercising three crashes, both rides/bells, hats and tom fill.
+    let step = (SAMPLE_RATE as f32 * 60.0 / 112.0 / 4.0) as usize;
+    let mut events = Vec::new();
+    for row in 0..64 {
+        if row % 8 == 0 || row % 16 == 10 {
+            events.push((row * step, 36, 116));
+        }
+        if row % 8 == 4 {
+            events.push((row * step, 38, 112));
+        }
+        if row % 2 == 0 {
+            events.push((row * step, if row < 32 { 42 } else { 51 }, 82));
+        }
+        if row % 16 == 0 {
+            events.push((row * step, [49, 57, 60, 65][row / 16], 104));
+        }
+        if row % 16 == 14 {
+            events.push((row * step, if row < 32 { 53 } else { 64 }, 96));
+        }
+        if row >= 60 {
+            events.push((row * step, [48, 47, 45, 41][row - 60], 100));
+        }
+    }
+    events.sort_by_key(|e| e.0);
+    let duration = 64.0 * step as f32 / SAMPLE_RATE as f32 + 8.0;
+    let (frames, diagnostics) = render_events(&kit, &events, duration)?;
+    if frames
+        .iter()
+        .any(|s| !s.left.is_finite() || !s.right.is_finite())
+    {
+        bail!("nonfinite mix");
+    }
+    write_wav(&output.join("power-studio-preview.wav"), &frames)?;
+    measurements.push(measure(
+        "power-studio-preview.wav".into(),
+        "expanded-groove".into(),
+        0,
+        &frames,
+        diagnostics,
+    ));
+    write_measurements(output, &measurements)?;
+    println!("Power Studio: 30 voices, three rising velocities, two hits per velocity, exact repeat renders and full-kit preview pass");
+    Ok(())
+}
+
 struct Pattern {
     name: &'static str,
     duration: f32,
